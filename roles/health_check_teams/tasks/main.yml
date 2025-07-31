@@ -1,0 +1,61 @@
+---
+# ------------------------------------------------------------
+# 1. Inicializar variáveis globais
+# ------------------------------------------------------------
+- name: Inicializar variáveis globais
+  set_fact:
+    resultados_por_tag: {}
+    status_ok: [200, 202, 301, 302, 401]
+
+# ------------------------------------------------------------
+# 2. Consultar monitores Dynatrace por TAG
+# ------------------------------------------------------------
+- name: Consultar monitores Dynatrace por TAG
+  uri:
+    url: "{{ item.url }}"
+    method: GET
+    headers:
+      accept: "application/json; charset=utf-8"
+      Authorization: "Api-Token {{ api_token }}"  # <-- Defina via variáveis ou Ansible Vault
+    return_content: true
+    validate_certs: false
+  loop: "{{ dynatrace_api_url }}"  # Lista definida no inventário ou em vars
+  loop_control:
+    label: "{{ item.name }}"  # Exibe o nome da TAG durante execução
+  register: resultado_monitores  # Armazena todas as respostas para uso posterior
+
+# ------------------------------------------------------------
+# 3. Processar todos os monitores de todas as TAGs
+# ------------------------------------------------------------
+- name: Processar todos os monitores de todas as TAGs
+  include_tasks: processa_monitor.yml  # Script separado para processar cada monitor
+  loop: "{{ resultado_monitores.results | subelements('json.monitors') }}"
+  loop_control:
+    loop_var: monitor_pair  # Nome da variável que conterá o par (resultado, monitor)
+
+# ------------------------------------------------------------
+# 4. Definir data atual com fuso horário de São Paulo (-3 GMT)
+# ------------------------------------------------------------
+- name: Definir data atual com fuso horário de São Paulo (-3 GMT)
+  set_fact:
+    data_atual: "{{ lookup('pipe', 'TZ=America/Sao_Paulo date +%Y-%m-%d\\ %H:%M:%S') }}"
+
+# ------------------------------------------------------------
+# 5. Identificar TAGs que possuem monitores com falha
+# ------------------------------------------------------------
+- name: Identificar TAGs com falha
+  set_fact:
+    tags_com_falha: >-
+      {{
+        resultados_por_tag | dict2items
+        | selectattr('value.erros', 'defined')   # Garante que a chave 'erros' existe
+        | selectattr('value.erros', 'truthy')    # Garante que há erros registrados
+        | map(attribute='key')                   # Pega o nome da TAG
+        | list
+      }}
+
+# ------------------------------------------------------------
+# 6. Enviar template final
+# ------------------------------------------------------------
+- name: Enviar template final
+  include_tasks: envia_template.yml  # Script separado que monta e envia o template

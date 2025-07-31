@@ -1,0 +1,99 @@
+---
+
+# ------------------------------------------------------------
+# 1️⃣ Extrair informações básicas do monitor atual
+# ------------------------------------------------------------
+- name: Extrair nome, URL base e entityId do monitor
+  set_fact:
+    # Monitor atual (conteúdo JSON do Dynatrace)
+    monitor_item: "{{ monitor_pair.1 }}"
+
+    # Nome da TAG associada ao grupo de monitores
+    nome_tag: "{{ monitor_pair.0.item.name }}"
+
+    # Nome do monitor (remove texto entre parênteses, se existir)
+    nome_monitor: "{{ monitor_pair.1.name | default('Sem Nome') | regex_replace(' \\(.*\\)', '') }}"
+
+    # Extrai a URL base do monitor (sem caminho adicional)
+    url_monitor: "{{ (monitor_pair.0.item.url | regex_search('^https?://[^/]+')) | default('N/A') }}"
+
+    # Identificador único do monitor no Dynatrace
+    entity_id: "{{ monitor_pair.1.entityId | default('') }}"
+
+# ------------------------------------------------------------
+# 2️⃣ Validação: o entityId é obrigatório
+# ------------------------------------------------------------
+- name: Validar entityId antes de continuar
+  fail:
+    msg: "Monitor {{ nome_monitor }} não possui entityId válido."
+  when: entity_id == ''
+
+# ------------------------------------------------------------
+# 3️⃣ Consultar detalhes de execução do monitor via API Dynatrace
+# ------------------------------------------------------------
+- name: Obter status HTTP via API Dynatrace
+  uri:
+    # URL da API Dynatrace - substituir {{ dynatrace_url }} pelo endpoint real
+    url: "{{ dynatrace_url }}/api/v2/synthetic/execution/{{ entity_id }}/SUCCESS"
+    method: GET
+    headers:
+      Authorization: "Api-Token {{ api_token }}"  # Substituir {{ api_token }} por variável definida em vars
+      Accept: "application/json; charset=utf-8"
+    return_content: true
+    validate_certs: false  # Defina como true se o Dynatrace tiver certificado válido
+  register: resultado_uri
+  failed_when: false  # Não falhar caso o retorno seja erro HTTP
+
+# ------------------------------------------------------------
+# 4️⃣ Extrair código HTTP real da resposta
+# ------------------------------------------------------------
+- name: Extrair status_code real da resposta
+  set_fact:
+    status_code: >-
+      {{
+        (
+          resultado_uri.json.locationsExecutionResults is defined and
+          resultado_uri.json.locationsExecutionResults | length > 0 and
+          resultado_uri.json.locationsExecutionResults[0].requestResults is defined and
+          resultado_uri.json.locationsExecutionResults[0].requestResults | length > 0 and
+          resultado_uri.json.locationsExecutionResults[0].requestResults[0].responseStatusCode is defined
+        )
+        | ternary(
+            resultado_uri.json.locationsExecutionResults[0].requestResults[0].responseStatusCode,
+            -1  # Caso não haja código, define como -1
+        )
+      }}
+
+# ------------------------------------------------------------
+# 5️⃣ Atualizar dicionário global com resultados
+# ------------------------------------------------------------
+- name: Atualizar resultados_por_tag
+  set_fact:
+    resultados_por_tag: >-
+      {{
+        resultados_por_tag | combine({
+          nome_tag: resultados_por_tag.get(nome_tag, {'ok': [], 'erros': [], 'blocos': []}) | combine({
+
+            # Se o código HTTP estiver na lista de status OK → adiciona à lista 'ok'
+            ((status_code | int) in (status_ok | map('int') | list)) | ternary('ok', 'erros'): (
+              resultados_por_tag.get(nome_tag, {'ok': [], 'erros': [], 'blocos': []})[((status_code | int) in (status_ok | map('int') | list)) | ternary('ok', 'erros')] + [
+                nome_monitor ~ ' → ' ~ url_monitor ~ ' → ' ~ (status_code | string)
+              ]
+            ),
+
+            # Se houver erro → adiciona blocos formatados para o Adaptive Card do Teams
+            'blocos': (
+              ((status_code | int) in (status_ok | map('int') | list))
+              | ternary(
+                  resultados_por_tag.get(nome_tag, {'blocos': []}).blocos,  # Se OK → mantém blocos
+                  resultados_por_tag.get(nome_tag, {'blocos': []}).blocos + [
+                    { 'type': 'TextBlock', 'text': '🔴 ' ~ nome_monitor, 'weight': 'Bolder', 'wrap': True },
+                    { 'type': 'TextBlock', 'text': '🌐 ' ~ url_monitor, 'spacing': 'Small', 'isSubtle': true },
+                    { 'type': 'TextBlock', 'text': '⚠️ HTTP ' ~ (status_code | string) ~ ' ' ~ status_mensagens.get((status_code | string), 'Erro'), 'color': 'Attention', 'wrap': True },
+                    { 'type': 'TextBlock', 'text': '---', 'spacing': 'Medium', 'separator': true }
+                  ]
+                )
+            )
+          })
+        }, recursive=True)
+      }}

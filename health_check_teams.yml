@@ -1,0 +1,6 @@
+---
+- name: Verificar monitores Dynatrace e enviar resultados para Teams
+  hosts: localhost               # Executa localmente (não conecta em hosts remotos)
+  gather_facts: false             # Não coleta fatos do sistema, pois não é necessário
+  roles:
+    - health_check_teams          # Nome da role que contém toda a lógica de verificação

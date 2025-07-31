@@ -1,0 +1,75 @@
+---
+
+# ------------------------------------------------------------
+# 1️⃣ Envia mensagem "OK" se nenhum problema for encontrado
+# ------------------------------------------------------------
+- name: Enviar card OK se nenhuma falha detectada
+  when: tags_com_falha | length == 0
+  uri:
+    url: "{{ item }}"             # URL do webhook (ex.: Teams, Slack, etc.)
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    status_code: 202              # Espera retorno HTTP 202 Accepted
+    body:
+      type: message
+      attachments:
+        - contentType: application/vnd.microsoft.card.adaptive
+          content:
+            $schema: "http://adaptivecards.io/schemas/adaptive-card.json"
+            type: AdaptiveCard
+            version: "1.4"
+            body:
+              - type: TextBlock
+                text: "✅ Health Check - SISTEMA"
+                weight: Bolder
+                size: Medium
+                color: Good
+              - type: TextBlock
+                text: "⏰ Atualizado em {{ data_atual }}"
+                spacing: Small
+              - type: TextBlock
+                text: "🟢 Todos os endpoints monitorados retornaram status OK."
+                wrap: true
+  loop: "{{ webhook_urls }}"       # Envia para todos os webhooks configurados
+
+# ------------------------------------------------------------
+# 2️⃣ Envia mensagem de erro para cada TAG com falhas detectadas
+# ------------------------------------------------------------
+- name: Enviar cards com falhas por TAG
+  when: tags_com_falha | length > 0
+  loop: "{{ tags_com_falha }}"     # Lista de TAGs com problemas
+  loop_control:
+    loop_var: nome_tag             # Nome da TAG que está com falha
+  uri:
+    url: "{{ webhook_urls[0] }}"   # Aqui envia apenas para o primeiro webhook da lista
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    status_code: 202
+    body:
+      type: message
+      attachments:
+        - contentType: application/vnd.microsoft.card.adaptive
+          content:
+            $schema: "http://adaptivecards.io/schemas/adaptive-card.json"
+            type: AdaptiveCard
+            version: "1.4"
+            body:
+              - type: TextBlock
+                text: "❌ Health Check - {{ nome_tag }} com FALHAS"
+                weight: Bolder
+                size: Large
+                color: Attention
+              - type: TextBlock
+                text: "⏰ Atualizado em {{ data_atual }}"
+                spacing: Small
+                isSubtle: true
+              - type: Container
+                spacing: Medium
+                style: emphasis
+                # Este campo vem do processamento em processa_monitor.yml
+                # Deve conter os blocos de erro formatados para o Adaptive Card
+                items: "{{ resultados_por_tag[nome_tag].blocos }}"

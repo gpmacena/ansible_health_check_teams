@@ -1,0 +1,31 @@
+---
+webhook_urls:
+  - "https://SEU-WEBHOOK-1"
+  - "https://SEU-WEBHOOK-2"
+  # - "https://SEU-WEBHOOK-OPCIONAL"  # Pode adicionar mais, se necessário
+
+# ------------------------------------------------------------
+# Lista de endpoints da API Dynatrace para consulta de monitores
+# Cada item deve conter:
+# - name: Nome descritivo do grupo ou TAG no Dynatrace
+# - url: Endpoint da API Dynatrace para buscar monitores com essa TAG
+# ------------------------------------------------------------
+dynatrace_api_url:
+  - name: "NOME-DO-GRUPO-1"
+    url: "https://SEU-DYNATRACE/e/SEU-ENV-ID/api/v1/synthetic/monitors?tag=TAG-DO-MONITOR-1&type=HTTP&enabled=true"
+
+  - name: "NOME-DO-GRUPO-2"
+    url: "https://SEU-DYNATRACE/e/SEU-ENV-ID/api/v1/synthetic/monitors?tag=TAG-DO-MONITOR-2&type=HTTP&enabled=true"
+
+  # Adicione quantos grupos precisar seguindo o mesmo padrão acima
+
+# ------------------------------------------------------------
+# URL base da instância Dynatrace
+# ------------------------------------------------------------
+dynatrace_url: "https://SEU-DYNATRACE/e/SEU-ENV-ID"
+
+# ------------------------------------------------------------
+# Token de API do Dynatrace
+# RECOMENDADO: Use Ansible Vault para proteger este valor em produção.
+# ------------------------------------------------------------
+api_token: "SEU-TOKEN-DYNATRACE"
